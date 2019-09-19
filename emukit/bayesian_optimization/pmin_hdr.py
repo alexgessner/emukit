@@ -1,6 +1,6 @@
 
 import numpy as np
-import numpy.linalg as slinalg
+import scipy.linalg as slinalg
 import constrained_gaussian_integrals as cgi
 
 
@@ -19,27 +19,34 @@ def joint_min(mu: np.ndarray, var: np.ndarray, with_derivatives: bool=False) -> 
     :returns: pmin distribution, dims (N, 1).
     """
 
-    pmin = ProbMinHDR(mu, var)
+    pmin = ProbMinLoop(mu, var, with_derivatives)
+    pmin.run()
 
     if not with_derivatives:
-        return pmin.logP
+        return pmin.log_pmin
 
-    return pmin.logP, pmin.dlogPdMu, pmin.dlogPdSigma, pmin.dlogPdMudMu
+    return pmin.log_pmin, pmin.dlogPdMu, pmin.dlogPdSigma, pmin.dlogPdMudMu
 
 
 class ProbMinLoop():
-    def __init__(self, mu: np.ndarray, Sigma: np.ndarray, with_derivatives: bool):
+    def __init__(self, mu: np.ndarray, Sigma: np.ndarray, with_derivatives: bool, N_subset: int = 8,
+                 N_hdr: int = 1024):
         """
         Computes the approximate probability of every of the N representer points to be the minimum.
         This requires the solution to a linearly constrained Gaussian integral, which is solved using HDR from the
         constrained_gaussian_integrals package.
         :param mu: mean of representer points (from GP), dims (N,).
         :param Sigma: covariance of representer points (from GP), dims (N, N).
+        :param N_subset: Number of samples used to construct the subset sequence, defaults to 8
+        :param N_hdr: Number of samples used for HDR, defaults to 1024
         """
         self.N = mu.shape[0]
         self.mu = mu
         self.Sigma = Sigma
         self.L = slinalg.cholesky(Sigma, lower=True)
+        self.with_derivatives = with_derivatives
+        self.N_subset = N_subset
+        self.N_hdr = N_hdr
 
         # initialize crucial values
         self.log_pmin = np.zeros((self.N, 1))
@@ -47,21 +54,29 @@ class ProbMinLoop():
         if self.with_derivatives:
             self.deriv = None
 
-    def run(self):
+    def run(self, ):
         """
         Compute the logarithm of the approximate integral for p_min using HDR
-
         :return: None
         """
+
+        # handle extra arguments if available, otherwise set default values
+        # n_skip = kwargs['n_skip'] if 'n_skip' in kwargs.keys() else 3
+        # verbose = kwargs['verbose'] if 'verbose' in kwargs.keys() else False
+
         for i in range(self.N):
             # compute the p_min for the current representer point
-            pmin_i = ProbMinSingle(self.mu, self.L, self.with_derivates)
-            self.log_pmin[i,0] = pmin_i.log_pmin()
-        return
+            pmini = ProbMinSingle(i, self.mu, self.L, self.with_derivatives, self.N_subset, self.N_hdr)
+            self.log_pmin[i,0] = pmini.log_pmin()
+            print('Done with element ', i)
+
+            # TODO: Add derivatives
+
+        return self.log_pmin
 
 
 class ProbMinSingle():
-    def __init__(self, i, mu: np.ndarray, cholSigma: np.ndarray, with_derivates: bool):
+    def __init__(self, i, mu: np.ndarray, cholSigma: np.ndarray, with_derivatives: bool, N_subset: int, N_hdr: int):
         """
         Computes the approximate probability of _ONE_ of the N representer points to be the minimum.
         This requires the solution to a linearly constrained Gaussian integral, which is solved using HDR from the
@@ -70,17 +85,29 @@ class ProbMinSingle():
         :param mu: mean of representer points (from GP), dims (N,).
         :param Sigma: covariance of representer points (from GP), dims (N, N).
         :param with_derivatives: If True than also the gradients are computed (relevant for storage only)
+        :param N_subset: Number of samples used to construct the subset sequence
+        :param N_hdr: Number of samples used for HDR
         """
         self.i = i
         self.N = mu.shape[0]
         self.mu = mu
         self.L = cholSigma
-        self.with_derivatives = with_derivates
+        self.with_derivatives = with_derivatives
+        self.N_subset = N_subset
+        self.N_hdr = N_hdr
 
         # linear constraints
         M = np.split(np.eye(self.N-1), np.array([self.i]), axis=1)
-        M = np.hstack((A[0], -np.ones((N, 1)), A[1]))
+        M = np.hstack((M[0], -np.ones((self.N - 1, 1)), M[1]))
         self.lincon = cgi.LinearConstraints(np.dot(M, self.L), np.dot(M, self.mu))
+
+        # subset simulation
+        self.subsetsim = cgi.subset_simulation.SubsetSimulation(self.lincon, self.N_subset, 0.5, n_skip=3)
+        self.subsetsim.run_loop(verbose=False)
+
+        # set up HDR
+        self.hdr = cgi.hdr.HDR(self.lincon, self.subsetsim.tracker.shifts(), self.N_hdr,
+                               self.subsetsim.tracker.x_inits(), n_skip=3) # TODO: surface n_skip
 
         if self.with_derivatives:
             self.first_moment = None
@@ -91,7 +118,8 @@ class ProbMinSingle():
         Compute the logarithm of the approximate integral for p_min using HDR
         :return: np.float log of pmin
         """
-        pass
+        self.hdr.run(verbose=False)
+        return self.hdr.tracker.log_integral()
 
     def samples(self, N_samples):
         """
