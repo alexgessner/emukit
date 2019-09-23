@@ -43,7 +43,7 @@ class ProbMinLoop():
         self.N = mu.shape[0]
         self.mu = mu
         self.Sigma = Sigma
-        self.L = slinalg.cholesky(Sigma, lower=True)
+        self.L = slinalg.cholesky(Sigma + 1.e-10*np.eye(self.N), lower=True)
         self.with_derivatives = with_derivatives
         self.N_subset = N_subset
         self.N_hdr = N_hdr
@@ -54,10 +54,10 @@ class ProbMinLoop():
         if self.with_derivatives:
             self.deriv = None
 
-    def run(self, ):
+    def run(self):
         """
         Compute the logarithm of the approximate integral for p_min using HDR
-        :return: None
+        :return: log p_min at all representer points
         """
 
         # handle extra arguments if available, otherwise set default values
@@ -73,6 +73,19 @@ class ProbMinLoop():
             # TODO: Add derivatives
 
         return self.log_pmin
+
+    def run_idx(self, idx):
+        """
+        Compute the logarithm of the approximate integral for p_min using HDR for a list of indices only
+        :param idx: list of indices
+        :return: log p_min for given representer points
+        """
+        for i in idx:
+            pmini = ProbMinSingle(i, self.mu, self.L, self.with_derivatives, self.N_subset, self.N_hdr)
+            self.log_pmin[i, 0] = pmini.log_pmin()
+            print('Done with element ', i)
+        return self.log_pmin[idx, :]
+
 
 
 class ProbMinSingle():
