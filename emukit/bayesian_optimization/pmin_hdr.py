@@ -157,9 +157,9 @@ class ProbMinSingle():
         :param f_samples: samples from the integrand
         :return: first moment of f (np.ndarray)
         """
-        return self.get_sample_mean(f_samples), self.get_sample_cov(f_samples)
+        return self.get_first_moment(f_samples), self.get_second_moment(f_samples)
 
-    def get_sample_mean(self, f_samples):
+    def get_first_moment(self, f_samples):
         """
         Computes the first moment of f w.r.t. the integrand of pmin
         :param f_samples: samples from the integrand
@@ -167,12 +167,13 @@ class ProbMinSingle():
         """
         return np.mean(f_samples, axis=1)
 
-    def get_sample_cov(self, f_samples):
+    def get_second_moment(self, f_samples):
         """
         Computes the second moment of f w.r.t. the integrand of pmin
         :param f_samples: samples from the integrand
         :return: second moment of f (np.ndarray)
         """
+        return np.dot(f_samples, f_samples.T)/(f_samples.shape[1] - 1)
 
     def dlogPdMu(self, f_samples):
         """
@@ -180,11 +181,10 @@ class ProbMinSingle():
         :param f_samples: samples from the integrand
         :return: with gradient, np.ndarray, dim (N)
         """
-        f_mu_mean = self.get_sample_mean(f_samples-self.mu)
+        f_mu_mean = self.get_first_moment(f_samples - self.mu)
         Sigmainv_fm = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, f_mu_mean, lower=True),
                                                lower=False)
         return Sigmainv_fm / self.hdr.tracker.integral()
-
 
     def dlogPdSigma(self, f_samples):
         """
@@ -193,7 +193,9 @@ class ProbMinSingle():
         :param f_samples: samples from the integrand
         :return: (N(N+1)/2,) np.ndarray with gradient
         """
-        pass
+        # This is essentially the same as dlogPdMudMu, but only here the symmetry is accounted for?!
+        return 0.5*self.dlogPdMudMu(f_samples)[np.tril_indices(f_samples.shape[0])]
+
 
     def dlogPdMudMu(self, f_samples):
         """
@@ -201,4 +203,8 @@ class ProbMinSingle():
         :param f_samples: samples from the integrand
         :return: Hessian, dim (N,N)
         """
-        pass
+        f_mu = f_samples - self.mu
+        A = self.get_second_moment(f_mu) - np.dot(self.L, self.L.T)
+        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A, lower=True), lower=False)
+        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A.T, lower=True), lower=False)
+        return A / self.hdr.tracker.integral()
