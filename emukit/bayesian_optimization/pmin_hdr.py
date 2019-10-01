@@ -144,9 +144,18 @@ class ProbMinSingle():
         :return: samples (np.ndarray)
         """
         # ESS from domain
-        ess = cgi.loop.EllipticalSliceOuterLoop(N_samples - self.X_samples.shape[-1],
-                                                self.lincon, n_skip=2, x_init=self.X_samples)
+        if self.X_samples is None:
+            # get initial samples from subset simulation
+            x_init = self.subsetsim.tracker.sequence_of_nestings[-1].X_inside()
+        else:
+            # reuse samples from the integral computation
+            x_init = self.X_samples
+        ess = cgi.loop.EllipticalSliceOuterLoop(N_samples - x_init.shape[-1],
+                                                self.lincon, n_skip=2, x_init=x_init)
         ess.run_loop()
+
+        # add samples to the records
+        self.X_samples = ess.loop_state.X
 
         # Now these samples are drawn in the whitened space, so they need to be back-transformed
         return np.dot(self.L, ess.loop_state.X) + self.mu
@@ -175,16 +184,46 @@ class ProbMinSingle():
         """
         return np.dot(f_samples, f_samples.T)/(f_samples.shape[1] - 1)
 
+    def dPdMu(self, f_samples):
+        """
+        Gradient of P for every representer point w.r.t. mu
+        :param f_samples: samples from the integrand
+        :return: with gradient, np.ndarray, dim (N)
+        """
+        f_mu_mean = self.get_first_moment(f_samples - self.mu)
+        return slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, f_mu_mean, lower=True), lower=False)
+
+    def dPdSigma(self, f_samples):
+        """
+        Gradient of P for every representer point w.r.t. Sigma.
+        Since Sigma is symmetric, only N(N+1)/2 values need to be stored per representer point
+        :param f_samples: samples from the integrand
+        :return: (N(N+1)/2,) np.ndarray with gradient
+        """
+        f_mu = f_samples - self.mu
+        A = self.get_second_moment(f_mu) - np.dot(self.L, self.L.T)
+        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A, lower=True), lower=False)
+        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A.T, lower=True), lower=False)
+        return 0.5 * A[np.tril_indices(f_samples.shape[0])]
+
+    def dPdMudMu(self, f_samples):
+        """
+        Hessian w.r.t. mean mu
+        :param f_samples: samples from the integrand
+        :return: Hessian, dim (N,N)
+        """
+        M1 = self._restore_symmetric_matrix_from_vector(2.*self.dPdSigma(f_samples), f_samples.shape[0])
+        dlpdmu = self.dPdMu(f_samples)
+        M2 = np.outer(dlpdmu, dlpdmu)
+        return M1 - M2
+
     def dlogPdMu(self, f_samples):
         """
         Gradient of logP for every representer point w.r.t. mu
         :param f_samples: samples from the integrand
         :return: with gradient, np.ndarray, dim (N)
         """
-        f_mu_mean = self.get_first_moment(f_samples - self.mu)
-        Sigmainv_fm = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, f_mu_mean, lower=True),
-                                               lower=False)
-        return Sigmainv_fm / self.hdr.tracker.integral()
+        return self.dPdMu(f_samples) / self.hdr.tracker.integral()
 
     def dlogPdSigma(self, f_samples):
         """
@@ -193,13 +232,7 @@ class ProbMinSingle():
         :param f_samples: samples from the integrand
         :return: (N(N+1)/2,) np.ndarray with gradient
         """
-        # This is essentially the same as dlogPdMudMu, but only here the symmetry is accounted for?!
-        f_mu = f_samples - self.mu
-        A = self.get_second_moment(f_mu) - np.dot(self.L, self.L.T)
-        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A, lower=True), lower=False)
-        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A.T, lower=True), lower=False)
-        return 0.5 * A[np.tril_indices(f_samples.shape[0])] / self.hdr.tracker.integral()
-
+        return self.dPdSigma(f_samples) / self.hdr.tracker.integral()
 
     def dlogPdMudMu(self, f_samples):
         """
