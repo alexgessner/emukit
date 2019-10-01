@@ -194,7 +194,11 @@ class ProbMinSingle():
         :return: (N(N+1)/2,) np.ndarray with gradient
         """
         # This is essentially the same as dlogPdMudMu, but only here the symmetry is accounted for?!
-        return 0.5*self.dlogPdMudMu(f_samples)[np.tril_indices(f_samples.shape[0])]
+        f_mu = f_samples - self.mu
+        A = self.get_second_moment(f_mu) - np.dot(self.L, self.L.T)
+        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A, lower=True), lower=False)
+        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A.T, lower=True), lower=False)
+        return 0.5 * A[np.tril_indices(f_samples.shape[0])] / self.hdr.tracker.integral()
 
 
     def dlogPdMudMu(self, f_samples):
@@ -203,8 +207,18 @@ class ProbMinSingle():
         :param f_samples: samples from the integrand
         :return: Hessian, dim (N,N)
         """
-        f_mu = f_samples - self.mu
-        A = self.get_second_moment(f_mu) - np.dot(self.L, self.L.T)
-        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A, lower=True), lower=False)
-        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A.T, lower=True), lower=False)
-        return A / self.hdr.tracker.integral()
+        M1 = self._restore_symmetric_matrix_from_vector(2.*self.dlogPdSigma(f_samples), f_samples.shape[0])
+        dlpdmu = self.dlogPdMu(f_samples)
+        M2 = np.outer(dlpdmu, dlpdmu)
+        return M1 - M2
+
+    def _restore_symmetric_matrix_from_vector(self, v, size):
+        """
+        For a vector v that is the triangular part of a symmetric matrix, this routine restores the matrix
+        :param v: triangular part of symmetric matrix stored as vector
+        :param size: size of array
+        :return: symmetric array (size, size)
+        """
+        M = np.zeros((size, size))
+        M[np.tril_indices(size)] = v
+        return M + M.T - np.diag(M.diagonal())
