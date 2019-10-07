@@ -137,9 +137,9 @@ class ProbMinSingle():
         self.X_samples = self.hdr.run(verbose=False)
         return self.hdr.tracker.log_integral()
 
-    def samples(self, N_samples):
+    def raw_samples(self, N_samples):
         """
-        Draw samples from the argument of the integral
+        Draw samples z from the argument of the integral s.t. f=Lz+mu
         :param N_samples: number of samples drawn
         :return: samples (np.ndarray)
         """
@@ -158,7 +158,15 @@ class ProbMinSingle():
         self.X_samples = ess.loop_state.X
 
         # Now these samples are drawn in the whitened space, so they need to be back-transformed
-        return np.dot(self.L, ess.loop_state.X) + self.mu
+        return ess.loop_state.X
+
+    def samples(self, N_samples):
+        """
+        Draw samples from the argument of the integral
+        :param N_samples: number of samples drawn
+        :return: samples (np.ndarray)
+        """
+        return np.dot(self.L, self.raw_samples(N_samples)) + self.mu
 
     def get_moments(self, f_samples):
         """
@@ -168,48 +176,46 @@ class ProbMinSingle():
         """
         return self.get_first_moment(f_samples), self.get_second_moment(f_samples)
 
-    def get_first_moment(self, f_samples):
+    def get_first_moment(self, samples):
         """
         Computes the first moment of f w.r.t. the integrand of pmin
-        :param f_samples: samples from the integrand
+        :param samples: samples from the integrand
         :return: first moment of f (np.ndarray)
         """
-        return np.mean(f_samples, axis=1)
+        return np.mean(samples, axis=1)
 
-    def get_second_moment(self, f_samples):
+    def get_second_moment(self, samples):
         """
         Computes the second moment of f w.r.t. the integrand of pmin
-        :param f_samples: samples from the integrand
+        :param samples: samples from the integrand
         :return: second moment of f (np.ndarray)
         """
-        return np.dot(f_samples, f_samples.T)/(f_samples.shape[1] - 1)
+        return np.dot(samples, samples.T)/(samples.shape[1] - 1)
 
-    def dPdMu(self, f_samples):
+    def dPdMu(self, z_samples):
         """
         Gradient of P for every representer point w.r.t. mu
-        :param f_samples: samples from the integrand
+        :param z_samples: samples from the **transformed** integrand, s.t. f=Lz + mu
         :return: with gradient, np.ndarray, dim (N)
         """
-        f_mu_mean = self.get_first_moment(f_samples - self.mu)
-        return slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, f_mu_mean, lower=True), lower=False)
+        return slinalg.solve_triangular(self.L.T,  self.get_first_moment(z_samples), lower=False)
 
-    def dPdSigma(self, f_samples):
+    def dPdSigma(self, z_samples):
         """
         Gradient of P for every representer point w.r.t. Sigma.
         Since Sigma is symmetric, only N(N+1)/2 values need to be stored per representer point
-        :param f_samples: samples from the integrand
+        :param z_samples: samples from the **transformed** integrand, s.t. f=Lz + mu
         :return: (N(N+1)/2,) np.ndarray with gradient
         """
-        f_mu = f_samples - self.mu
-        A = self.get_second_moment(f_mu) - np.dot(self.L, self.L.T)
-        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A, lower=True), lower=False)
-        A = slinalg.solve_triangular(self.L.T, slinalg.solve_triangular(self.L, A.T, lower=True), lower=False)
-        return 0.5 * A[np.tril_indices(f_samples.shape[0])]
+        A = self.get_second_moment(z_samples) - np.eye(self.N)
+        A = slinalg.solve_triangular(self.L.T, A, lower=False)
+        # return 0.5 * A[np.tril_indices(f_samples.shape[0])]
+        return 0.5*slinalg.solve_triangular(self.L.T, A.T, lower=False)
 
-    def dPdMudMu(self, f_samples):
+    def dPdMudMu(self, z_samples):
         """
         Hessian w.r.t. mean mu
-        :param f_samples: samples from the integrand
+        :param z_samples: samples from the **transformed** integrand, s.t. f=Lz + mu
         :return: Hessian, dim (N,N)
         """
         M1 = self._restore_symmetric_matrix_from_vector(2.*self.dPdSigma(f_samples), f_samples.shape[0])
@@ -217,27 +223,27 @@ class ProbMinSingle():
         M2 = np.outer(dlpdmu, dlpdmu)
         return M1 - M2
 
-    def dlogPdMu(self, f_samples):
+    def dlogPdMu(self, z_samples):
         """
         Gradient of logP for every representer point w.r.t. mu
-        :param f_samples: samples from the integrand
+        :param z_samples: samples from the **transformed** integrand, s.t. f=Lz + mu
         :return: with gradient, np.ndarray, dim (N)
         """
         return self.dPdMu(f_samples) / self.hdr.tracker.integral()
 
-    def dlogPdSigma(self, f_samples):
+    def dlogPdSigma(self, z_samples):
         """
         Gradient of logP for every representer point w.r.t. Sigma.
         Since Sigma is symmetric, only N(N+1)/2 values need to be stored per representer point
-        :param f_samples: samples from the integrand
+        :param z_samples: samples from the **transformed** integrand, s.t. f=Lz + mu
         :return: (N(N+1)/2,) np.ndarray with gradient
         """
         return self.dPdSigma(f_samples) / self.hdr.tracker.integral()
 
-    def dlogPdMudMu(self, f_samples):
+    def dlogPdMudMu(self, z_samples):
         """
         Hessian w.r.t. mean mu
-        :param f_samples: samples from the integrand
+        :param z_samples: samples from the **transformed** integrand, s.t. f=Lz + mu
         :return: Hessian, dim (N,N)
         """
         M1 = self._restore_symmetric_matrix_from_vector(2.*self.dlogPdSigma(f_samples), f_samples.shape[0])
