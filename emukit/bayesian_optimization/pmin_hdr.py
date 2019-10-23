@@ -129,12 +129,12 @@ class ProbMinSingle():
         # store samples when computing the integral, and the integral
         self.X_samples = None
 
-    def log_pmin(self):
+    def log_pmin(self, verbose=False):
         """
         Compute the logarithm of the approximate integral for p_min using HDR
         :return: np.float log of pmin
         """
-        self.X_samples = self.hdr.run(verbose=False)
+        self.X_samples = self.hdr.run(verbose=verbose)
         return self.hdr.tracker.log_integral()
 
     def raw_samples(self, N_samples):
