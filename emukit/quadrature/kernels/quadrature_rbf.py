@@ -1,6 +1,9 @@
 # Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 import numpy as np
 from scipy.special import erf
@@ -13,7 +16,6 @@ from ...quadrature.interfaces.standard_kernels import IRBF
 class QuadratureRBF(QuadratureKernel):
     """
     Augments an RBF kernel with integrability
-
     Note that each standard kernel goes with a corresponding quadrature kernel, in this case QuadratureRBF
     """
 
@@ -36,11 +38,11 @@ class QuadratureRBF(QuadratureKernel):
         return self.kern.variance
 
     # the following methods are integrals of a quadrature kernel
-    def qK(self, x2: np.ndarray) -> np.ndarray:
+    def qK(self, x2: np.ndarray, lengthscale_factor: float = 1.) -> np.ndarray:
         """
         RBF kernel with the first component integrated out aka. kernel mean
-
         :param x2: remaining argument of the once integrated kernel, shape (n_point N, input_dim)
+        :param lengthscale_factor: positive multiplicative scaling of the lengthscale
         :returns: kernel mean at location x2, shape (1, N)
         """
         lower_bounds = self.integral_bounds.lower_bounds
@@ -51,19 +53,18 @@ class QuadratureRBF(QuadratureKernel):
 
         return kernel_mean.reshape(1, -1)
 
-    def Kq(self, x1: np.ndarray) -> np.ndarray:
+    def Kq(self, x1: np.ndarray, lengthscale_factor: float = 1.) -> np.ndarray:
         """
         RBF kernel with the second component integrated out aka. kernel mean
-
         :param x1: remaining argument of the once integrated kernel, shape (n_point N, input_dim)
+        :param lengthscale_factor: positive multiplicative scaling of the lengthscale
         :returns: kernel mean at location x1, shape (N, 1)
         """
-        return self.qK(x1).T
+        return self.qK(x1, lengthscale_factor).T
 
-    def qKq(self) -> np.float:
+    def qKq(self, lengthscale_factor: float = 1.) -> np.float:
         """
         RBF kernel integrated over both arguments x1 and x2
-
         :returns: double integrated kernel
         """
         lower_bounds = self.integral_bounds.lower_bounds
@@ -79,7 +80,6 @@ class QuadratureRBF(QuadratureKernel):
     def dqK_dx(self, x2: np.ndarray) -> np.ndarray:
         """
         gradient of the kernel mean (integrated in first argument) evaluated at x2
-
         :param x2: points at which to evaluate, shape (n_point N, input_dim)
         :return: the gradient with shape (input_dim, N)
         """
@@ -103,19 +103,17 @@ class QuadratureRBF(QuadratureKernel):
         return self.dqK_dx(x1).T
 
     # rbf-kernel specific helpers
-    def _scaled_vector_diff(self, v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
+    def _scaled_vector_diff(self, v1: np.ndarray, v2: np.ndarray, lengthscale_factor: float = 1.) -> np.ndarray:
         """
         Scaled element-wise vector difference between vectors v1 and v2
-
         .. math::
             \frac{v_1 - v_2}{\lambda \sqrt{2}}
-
         name mapping:
             \lambda: self.kern.lengthscale
-
         :param v1: first vector
         :param v2: second vector, must have same second dimensions as v1
+        :param lengthscale_factor: positive multiplicative scaling of the lengthscale
         :return: scaled difference between v1 and v2, np.ndarray with unchanged dimensions
-
         """
-        return (v1 - v2) / (self.lengthscale * np.sqrt(2))
+        lengthscale = (self.lengthscale * lengthscale_factor)[0]
+        return (v1 - v2) / (lengthscale * np.sqrt(2))
