@@ -3,106 +3,233 @@
 
 
 import numpy as np
-from scipy.linalg import lapack
 from typing import Tuple
+from scipy.linalg import lapack
 
-from ...quadrature.interfaces.base_gp import IBaseGaussianProcess
-from .warped_bq_model import WarpedBayesianQuadratureModel
-from .integration_measures import UniformMeasure
+from emukit.quadrature.methods.warped_bq_model import WarpedBayesianQuadratureModel
+from emukit.quadrature.interfaces.base_gp import IBaseGaussianProcess
+from emukit.quadrature.kernels.quadrature_rbf import QuadratureRBF
 
 
 class WSABI(WarpedBayesianQuadratureModel):
     """
-    class for vanilla Bayesian quadrature
+    Base class for WSABI, Gunter et al. 2014
+    WSABI must be used with the RBF kernel.
     """
+    def __init__(self, base_gp: IBaseGaussianProcess, adapt_offset: bool = False):
+        """
+        :param base_gp: a model derived from BaseGaussianProcess with QuadratureRBF quadrature kernel
+        :param adapt_offset: if True the offset the offset will be updated after new datapoints have been collected,
+        if False, the offset will be constant at 0. defaults to False. Offset refers to 'alpha' in Gunter et al.
+        """
+        if not isinstance(base_gp.kern, QuadratureRBF):
+            raise ValueError("WSABI can only be used with quadrature kernel which are instances of  QuadratureRBF, ",
+                             base_gp.kern.__class__.__name__, " given instead.")
 
-    def __init__(self, base_gp: IBaseGaussianProcess):
+        self.adapt_offset = adapt_offset
+        if adapt_offset:  # TODO: must be zero if not integrated over prob measure. otherwise integral is infty
+            self._compute_and_set_offset()
+        else:
+            self.offset = 0.
+
+        super(WSABI, self).__init__(base_gp)
+
+        # Todo: reset integral bounds to infy since wsabi ca not handle non-infty
+
+    # TODO: check how it can be called after function evaluations (currently it is not)
+    # TODO: of this is called also the Y values need to be transformed again.
+    def _compute_and_set_offset(self):
+        """if adapted, it uses the value given in Gunter et al. 2014"""
+        if self.adapt_offset:
+            # get data before offset is changed
+            Y = self.Y.copy()
+
+            # compute and set the new offset. this will change the transformation
+            minL = min(self.base_gp.Y)[0]  # TODO: check if this returns the correct thing
+            self.offset = 0.8 * minL
+
+            # need to reset data because the transformation changed with the  offset
+            self.set_data(self.X, Y)
+
+    def transform(self, Y):
+        """ Transform from base-GP to integrand """
+        return 0.5*(Y*Y) + self.offset
+
+    def inverse_transform(self, Y):
+        """ Transform from integrand to base-GP """
+        return np.sqrt(np.absolute(2.*(Y - self.offset)))
+
+    @staticmethod
+    def _symmetrize(A: np.ndarray) -> np.ndarray:
+        """
+        :param A: a square matrix, shape (N, N)
+        :return: the symmetrized matrix 0.5 (A + A')
+        """
+        return 0.5 * (A + A.T)
+
+
+class WSABIL(WSABI):
+    """
+    The WSABI-L Bayesian quadrature model (Gunter et al. 2014)
+    WSABI-L must be used with the RBF kernel.
+    WSABI-L approximates the integrand as follows:
+    - squared transformation of gp-base-model (chi-squared).
+    - linear expansion around the mean of the base-gp for fixed input location x.
+    - Gaussian is defined by first and second moment of linear expansion.
+    """
+    def __init__(self, base_gp: IBaseGaussianProcess, adapt_offset: bool = False):
         """
         :param base_gp: a model derived from BaseGaussianProcess
+        :param adapt_offset: if True the offset the offset will be updated after new datapoints have been collected,
+        if False, the offset will be constant at 0. defaults to False. Offset refers to 'alpha' in Gunter et al.
         """
-        super(VanillaBayesianQuadrature, self).__init__(base_gp)
-
-    def transform(self, Y: np.ndarray) -> np.ndarray:
-        """ Transform from base-GP to integrand """
-        return Y
-
-    def inverse_transform(self, Y: np.ndarray) -> np.ndarray:
-        """ Transform from integrand to base-GP """
-        return Y
+        super(WSABIL, self).__init__(base_gp, adapt_offset)
 
     def predict_base(self, X_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Computes predictive means and variances of the warped GP as well as the base GP
-
         :param X_pred: Locations at which to predict
         :returns: predictive mean and variances of warped GP, and predictive mean and variances of base-GP in that order
         all shapes (n_points, 1).
         """
-        m, cov = self.base_gp.predict(X_pred)
-        return m, cov, m, cov
+        mean_base, var_base = self.base_gp.predict(X_pred)
+
+        mean_approx = self.offset + 0.5 * (mean_base**2)
+        var_approx = (mean_base * mean_base) * var_base
+
+        return mean_approx, var_approx, mean_base, var_base
 
     def predict_base_with_full_covariance(self, X_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
                                                                              np.ndarray]:
         """
         Computes predictive means and covariance of the warped GP as well as the base GP
-
         :param X_pred: Locations at which to predict, shape (n_points, input_dim)
         :returns: predictive mean and covariance of warped GP, predictive mean and covariance of base-GP in that order.
         mean shapes both (n_points, 1) and covariance shapes both (n_points, n_points)
         """
-        m, cov = self.base_gp.predict_with_full_covariance(X_pred)
-        return m, cov, m, cov
+        mean_base, cov_base = self.base_gp.predict_with_full_covariance(X_pred)
 
-    def integrate(self, measure: UniformMeasure = None) -> Tuple[float, float]:
+        mean_approx = self.offset + 0.5 * (mean_base**2)
+        cov_approx = np.outer(mean_base, mean_base) * cov_base
+        cov_approx = self._symmetrize(cov_approx)  # for numerical stability
+
+        return mean_approx, cov_approx, mean_base, cov_base
+
+    def integrate(self) -> Tuple[float, float]:
         """
         Computes an estimator of the integral as well as its variance.
-
-        :param measure: The measure which is integrated against (default is Lebesgue)
         :returns: estimator of integral and its variance
         """
-        if measure is None:
-            integral_mean, integral_var = self._integrate_lebesgue()
-        elif isinstance(measure, UniformMeasure):
-            integral_mean, integral_var = self._integrate_uniform(measure)
-        else:
-            raise ValueError('unknown measure')
-        return integral_mean, integral_var
+        N, D = self.X.shape
 
-    def _integrate_lebesgue(self) -> Tuple[float, float]:
+        # weights and kernel
+        X = self.X / np.sqrt(2)
+        K = self.base_gp.kern.K(X, X)
+        weights = self.base_gp.graminv_residual()
+
+        # integral of scaled kernel
+        X_sums = 0.5 * (self.X.T[:, :, None] + self.X.T[:, None, :])
+        X_sums_vec = X_sums.reshape(D, -1).T
+
+        lengthscale_factor = 1./np.sqrt(2)
+        qK_vec = self.base_gp.kern.qK(X_sums_vec, lengthscale_factor=lengthscale_factor)
+        qK = qK_vec.reshape(N, N)
+
+        # integral mean
+        # TODO: need to multiply offset with integration domain of not a prop measure, otherwise 1.
+        integral_mean = self.offset + 0.5 * np.sum(np.outer(weights, weights) * qK * K)
+
+        # integral variance
+        qK_weights = np.dot(qK, weights)  # 1 x N
+        lower_chol = self.base_gp.gram_chol()
+        gram_inv_qK_weights = lapack.dtrtrs(lower_chol.T, (lapack.dtrtrs(lower_chol, qK_weights.T, lower=1)[0]),
+                                            lower=0)[0]
+
+        second_term = np.dot(qK_weights, gram_inv_qK_weights)
+
+        integral_variance = second_term[0, 0]
+
+        return float(integral_mean), integral_variance
+
+
+class WSABIM(WSABI):
+    """
+    The WSABI-M Bayesian quadrature model (Gunter et al. 2014)
+    WSABI-M must be used with the RBF kernel.
+    WSABI-M approximates the integrand as follows:
+    - squared transformation of gp-base-model (chi-squared).
+    - Gaussian is defined by first and second moment of chi-square-distribution.
+    """
+
+    def __init__(self, base_gp: IBaseGaussianProcess, adapt_offset: bool = False):
         """
-        Computes integral against Lebesgue measure
+        :param base_gp: a model derived from BaseGaussianProcess
+        :param adapt_offset: if True the offset the offset will be updated after new datapoints have been collected,
+        if False, the offset will be constant at 0. defaults to False. Offset refers to 'alpha' in Gunter et al.
+        """
+        super(WSABIM, self).__init__(base_gp, adapt_offset)
+
+    def predict_base(self, X_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Computes predictive means and variances of the warped GP as well as the base GP
+        :param X_pred: Locations at which to predict
+        :returns: predictive mean and variances of warped GP, and predictive mean and variances of base-GP in that order
+        all shapes (n_points, 1).
+        """
+        mean_base, var_base = self.base_gp.predict(X_pred)
+
+        mean_approx = self.offset + 0.5 * (mean_base**2 + var_base)
+        var_approx = 0.5 * var_base**2. + (mean_base**2 * var_base)
+
+        return mean_approx, var_approx, mean_base, var_base
+
+    def predict_base_with_full_covariance(self, X_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
+                                                                             np.ndarray]:
+        """
+        Computes predictive means and covariance of the warped GP as well as the base GP
+        :param X_pred: Locations at which to predict, shape (n_points, input_dim)
+        :returns: predictive mean and covariance of warped GP, predictive mean and covariance of base-GP in that order.
+        mean shapes both (n_points, 1) and covariance shapes both (n_points, n_points)
+        """
+        mean_base, cov_base = self.base_gp.predict_with_full_covariance(X_pred)
+        var_base = np.diag(cov_base)[:, np.newaxis]
+
+        mean_approx = self.offset + 0.5 * (mean_base**2 + var_base)
+        cov_approx = 0.5 * cov_base**2. + np.outer(mean_base, mean_base) * cov_base
+        cov_approx = self._symmetrize(cov_approx)  # for numerical stability
+
+        return mean_approx, cov_approx, mean_base, cov_base
+
+    def integrate(self) -> Tuple[float, float]:
+        """
+        Computes an estimator of the integral as well as its variance.
         :returns: estimator of integral and its variance
         """
-        kernel_mean_X = self.base_gp.kern.qK(self.X)
-        integral_mean = np.dot(kernel_mean_X, self.base_gp.graminv_residual())[0, 0]
-        integral_var = self.base_gp.kern.qKq() - np.square(lapack.dtrtrs(self.base_gp.gram_chol(), kernel_mean_X.T,
-                                                           lower=1)[0]).sum(axis=0, keepdims=True)[0][0]
-        return integral_mean, integral_var
+        N, D = self.X.shape
 
-    def _integrate_uniform(self, measure: UniformMeasure) -> Tuple[float, float]:
-        """
-        Computes integral against Uniform measure.
-        :param measure: A uniform measure
-        :returns: estimator of integral and its variance
-        """
-        # get max of both lower bounds and min of both upper bounds and integrate over the resulting bounds.
-        # This is equivalent (up to the uniform density) to integrating with respect to the uniform measure.
-        integral_bounds = self.integral_bounds.bounds
-        uniform_bounds = measure.bounds
-        old_integral_bound_list = self.integral_bounds.bounds.copy()
-        new_integral_bound_list = [(max(int_bounds[0], uni_bounds[0]), min(int_bounds[1], uni_bounds[1]))
-                                   for int_bounds, uni_bounds in zip(integral_bounds, uniform_bounds)]
+        # weights and kernel
+        X = self.X / np.sqrt(2)
+        K = self.base_gp.kern.K(X, X)
+        weights = self.base_gp.graminv_residual()
 
-        # setting new bounds also checks bound validity
-        self.integral_bounds = new_integral_bound_list
-        integral_mean_lebesgue, integral_var_lebesgue = self._integrate_lebesgue()
-        self.integral_bounds = old_integral_bound_list
+        # integral of scaled kernel
+        X_sums = 0.5 * (self.X.T[:, :, None] + self.X.T[:, None, :])
+        X_sums_vec = X_sums.reshape(D, -1).T
 
-        integral_mean = measure.density * integral_mean_lebesgue
-        integral_var = (measure.density**2) * integral_var_lebesgue
-        return integral_mean, integral_var
+        lengthscale_factor = 1./np.sqrt(2)
+        qK_vec = self.base_gp.kern.qK(X_sums_vec, lengthscale_factor=lengthscale_factor)
+        qK = qK_vec.reshape(N, N)
+        first_term = 0.5 * np.sum(np.outer(weights, weights) * qK * K)
 
-    def _compute_integral_mean_and_kernel_mean(self) -> Tuple[float, np.ndarray]:
-        kernel_mean_X = self.base_gp.kern.qK(self.X)
-        integral_mean = np.dot(kernel_mean_X, self.base_gp.graminv_residual())[0, 0]
-        return integral_mean, kernel_mean_X
+        init_qvar = (self.base_gp.kern.variance * self.base_gp.kern.integral_bounds.get_area_of_integration_domain())[0]
+        lower_chol = self.base_gp.gram_chol()
+        gram_inv = lapack.dtrtrs(lower_chol.T, (lapack.dtrtrs(lower_chol, np.eye(lower_chol.shape[0]), lower=1)[0]),
+                                 lower=0)[0]
+        second_term = 0.5 * (init_qvar - np.sum(gram_inv * qK))
+
+        # integral mean
+        integral_mean = self.offset + first_term + second_term
+
+        # integral variance
+
+        return integral_mean, 1.
