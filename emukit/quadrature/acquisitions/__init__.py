@@ -6,3 +6,4 @@ from .squared_correlation import SquaredCorrelation as IntegralVarianceReduction
 from .mutual_information import MutualInformation  # noqa: F401
 from .posterior_kernel_mean import PosteriorKernelMean
 from .model_variance import ModelVariance
+from .uncertainty_sampling import UncertaintySampling  # noqa: F401
