@@ -6,3 +6,4 @@ from . import example_functions
 from . import integral_bounds
 from . import kernels
 from . import multi_source_bq
+from . import outer_loop
