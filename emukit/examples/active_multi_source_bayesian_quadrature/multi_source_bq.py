@@ -38,7 +38,7 @@ class MultiSourceBayesianQuadrature(GP):
         """
         return self._compute_integral_mean_and_variance(levels=levels)
 
-    def update_data(self, X, Y):
+    def set_data(self, X, Y):
         """ Wrapper for emukit style model update in terms of GPy model update """
         self.set_XY(X, Y)
 
