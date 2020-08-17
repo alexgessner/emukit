@@ -1,14 +1,16 @@
 # Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-
 import numpy as np
-from GPy.core.gp import GP
-from GPy.likelihoods import Gaussian
+from typing import Tuple
 from scipy.linalg import lapack
 
+from GPy.core.gp import GP
+from GPy.likelihoods import Gaussian
+from emukit.core.interfaces import IModel
 
-class MultiSourceBayesianQuadrature(GP):
+
+class MultiSourceBayesianQuadrature(IModel):
     """
     Adds Vanilla Bayesian Quadrature to GPy GP
 
@@ -30,7 +32,20 @@ class MultiSourceBayesianQuadrature(GP):
 
         # for GP regression
         likelihood = Gaussian(variance=noise_var)
-        super(MultiSourceBayesianQuadrature, self).__init__(X, Y, kernel, likelihood, name="Vanilla AMS-BQ", **kwargs)
+
+        # set up a GPy multi-output model
+        self.gp = GP(X=X, Y=Y, kernel=kernel, likelihood=likelihood, name="MS-BQ", **kwargs)
+
+    @property
+    def X(self):
+        return self.gp.X
+
+    @property
+    def Y(self):
+        return self.gp.X
+
+    def predict(self, X: np.ndarray, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
+        return self.gp.predict(X, **kwargs)
 
     def integrate(self, levels=None):
         """
@@ -41,6 +56,9 @@ class MultiSourceBayesianQuadrature(GP):
     def set_data(self, X, Y):
         """ Wrapper for emukit style model update in terms of GPy model update """
         self.set_XY(X, Y)
+
+    def optimize(self) -> None:
+        self.gp.optimize()
 
     # helpers
     def _compute_integral_mean(self, levels=None):
