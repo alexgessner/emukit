@@ -1,7 +1,3 @@
-
-
-import numpy as np
-
 # emukit imports
 from emukit.core.acquisition import Acquisition
 from emukit.core.loop.outer_loop import OuterLoop
@@ -14,7 +10,7 @@ from ...integral_bounds import IntegralBounds
 from ...multi_source_bq import MultiSourceBayesianQuadrature
 from ..cost import CostFunctionsBase
 from .candidate_point_calculators import MultiSourceSequentialPointSelector
-from ..acquisition import MultiSourceIntegratedVarianceReductionPerCost
+from emukit.examples.active_multi_source_bayesian_quadrature.acquisition import MultiSourceIntegratedVarianceReductionPerCost
 
 
 class MultiSourceQuadratureLoop(OuterLoop):

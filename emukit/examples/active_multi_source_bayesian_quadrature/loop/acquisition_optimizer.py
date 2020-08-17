@@ -3,7 +3,7 @@ from scipy.optimize import minimize, Bounds
 
 from emukit.core.optimization import AcquisitionOptimizerBase
 
-from ...integral_bounds import IntegralBounds
+from emukit.examples.active_multi_source_bayesian_quadrature.integral_bounds import IntegralBounds
 
 
 # this class could inherit from emukit.core.optimization.AcquisitionOptimizer

@@ -1,3 +1,6 @@
+# Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from .integrated_variance_reduction_per_cost import MultiSourceIntegratedVarianceReductionPerCost
 from .squared_correlation import MultiSourceSquaredCorrelation
 from .squared_correlation_per_cost import MultiSourceSquaredCorrelationPerCost
