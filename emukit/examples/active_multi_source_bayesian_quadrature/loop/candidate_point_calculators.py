@@ -2,7 +2,7 @@
 import numpy as np
 from emukit.core.loop.candidate_point_calculators import SequentialPointCalculator
 
-from ..optimization import MultiSourceAcquisitionOptimizer
+from .acquisition_optimizer import MultiSourceAcquisitionOptimizer
 
 
 # this class could inherit from emukit.core.loop.candidate_point_calculators.Sequential

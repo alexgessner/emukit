@@ -7,7 +7,7 @@ from emukit.examples.active_multi_source_bayesian_quadrature.integral_bounds imp
 
 
 # this class could inherit from emukit.core.optimization.AcquisitionOptimizer
-class MultiSourceAcquisitionOptimizer():
+class MultiSourceAcquisitionOptimizer:
     """
     Class that handles the optimization of an acquisition function for the multi-source setting.
     Do not confound with the MultiSourceAcquisitionOptimizer in emukit.core.optimization.

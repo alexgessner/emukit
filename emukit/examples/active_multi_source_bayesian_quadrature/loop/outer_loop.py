@@ -6,16 +6,15 @@ from emukit.core.loop.loop_state import create_loop_state
 from emukit.core.loop.model_updaters import FixedIntervalUpdater
 
 # multi-source specific objects
-from ...integral_bounds import IntegralBounds
-from ...multi_source_bq import MultiSourceBayesianQuadrature
-from ..cost import CostFunctionsBase
+from ..integral_bounds import IntegralBounds
+from ..multi_source_bq import MultiSourceBayesianQuadrature
+from ..acquisition import MultiSourceIntegratedVarianceReductionPerCost, CostFunctionsBase
 from .candidate_point_calculators import MultiSourceSequentialPointSelector
-from emukit.examples.active_multi_source_bayesian_quadrature.acquisition import MultiSourceIntegratedVarianceReductionPerCost
 
 
 class MultiSourceQuadratureLoop(OuterLoop):
-        def __init__(self, integral_bounds: IntegralBounds, n_levels: int, model: MultiSourceBayesianQuadrature, cost_functions: CostFunctionsBase,
-                     acquisition: Acquisition=None, update_interval: int=1):
+        def __init__(self, integral_bounds: IntegralBounds, n_levels: int, model: MultiSourceBayesianQuadrature,
+                     cost_functions: CostFunctionsBase, acquisition: Acquisition=None, update_interval: int=1):
             """
             An outer loop class for use with multi-source Bayesian quadrature
 
