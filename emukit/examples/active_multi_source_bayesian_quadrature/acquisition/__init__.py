@@ -3,3 +3,4 @@ from .squared_correlation import MultiSourceSquaredCorrelation
 from .squared_correlation_per_cost import MultiSourceSquaredCorrelationPerCost
 from .mutual_information_per_cost import MultiSourceMutualInformationPerCost
 from .inverse_integral_variance_per_cost import MultiSourceInverseIntegralVariancePerCost
+from .cost_function import CostFunctionsBase, ConstantCostFunctions, CostFunctions
