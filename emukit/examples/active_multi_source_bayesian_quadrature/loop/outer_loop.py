@@ -41,4 +41,4 @@ class MultiSourceQuadratureLoop(OuterLoop):
         new_x = self.candidate_point_calculator.compute_next_points(self.loop_state)
         results = user_functions.evaluate(new_x)
         self.loop_state.update(results)
-        self.model_updater.update(self.loop_state)
+        self.model_updaters.update(self.loop_state)
