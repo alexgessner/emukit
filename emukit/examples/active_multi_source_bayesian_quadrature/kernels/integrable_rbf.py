@@ -25,7 +25,6 @@ class IntegrableRBF(RBF):
         assert self.lower_bounds.shape == (1, input_dim) and self.upper_bounds.shape == (1, input_dim)
         assert np.all(self.upper_bounds - self.lower_bounds >= 0.)
 
-
     def qK(self, x):
         """
         RBF kernel mean, i.e. the kernel integrated over the first argument as a function of its second argument
@@ -40,7 +39,6 @@ class IntegrableRBF(RBF):
 
         return kernel_mean.reshape(1, -1)
 
-
     def Kq(self, x):
         """
         RBF transposed kernel mean,
@@ -51,7 +49,6 @@ class IntegrableRBF(RBF):
         :returns: the kernel mean evaluated at N input points x, np.ndarray with shape (N,1)
         """
         return self.qK(x).T
-
 
     def qKq(self):
         """
@@ -67,7 +64,6 @@ class IntegrableRBF(RBF):
 
         return prefac * (exp_term + erf_term).prod()
 
-
     def dK_dx(self, x, x2):
         """
         gradient of the kernel wrt x
@@ -78,7 +74,6 @@ class IntegrableRBF(RBF):
         :return: the gradient of K with shape (input_dim, N, M)
         """
         return (self.dK_dr_via_X(x, x2)[None, ...] * self._dr_dx(x, x2))
-
 
     def dqK_dx(self, x):
         """
@@ -97,7 +92,6 @@ class IntegrableRBF(RBF):
 
         return self.qK(x) * fraction
 
-
     def dKq_dx(self, x):
         """
         gradient of the transposed kernel mean evaluated at x
@@ -106,7 +100,6 @@ class IntegrableRBF(RBF):
         :return: the gradient with shape (N, input_dim)
         """
         return self.dqK_dx(x).T
-
 
     # helpers
     def _scaled_vectordiff(self, v1, v2):

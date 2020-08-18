@@ -48,7 +48,6 @@ class MultiSourceAcquisitionOptimizer:
         else:
             return self._optimize_with_restarts(f, method=method, jac=None, n_restarts=n_restarts)
 
-
     def _optimize_with_restarts(self, f, method, jac, n_restarts):
         """
         Helper to restart the optimization n_restart times from random initialisations. Of n_restart optimization runs,

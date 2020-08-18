@@ -27,7 +27,6 @@ class IntegralBounds():
         self.lower_bounds = lower_bounds
         self.upper_bounds = upper_bounds
 
-
     def check_in_domain(self, x):
         """
         Checks if the points in x lie between the min and max allowed values
