@@ -14,7 +14,7 @@ from .candidate_point_calculators import MultiSourceSequentialPointSelector
 
 class MultiSourceQuadratureLoop(OuterLoop):
     def __init__(self, integral_bounds: IntegralBounds, n_levels: int, model: MultiSourceBayesianQuadrature,
-                 cost_functions: CostFunctionsBase, acquisition: Acquisition=None, update_interval: int=1):
+                 acquisition: Acquisition, update_interval: int = 1):
         """
         An outer loop class for use with multi-source Bayesian quadrature
 
@@ -24,11 +24,7 @@ class MultiSourceQuadratureLoop(OuterLoop):
         :param acquisition: acquisition function object
         :param update_interval: How many iterations between optimizing the model
         """
-
-        if acquisition is None:
-            acquisition = MultiSourceIntegratedVarianceReductionPerCost(model, cost_functions)
-        else:
-            acquisition = acquisition
+        # TODO: The integral bounds should be in line with space requirements by OuterLoop, and n_levels should go (should be in model?!)
 
         candidate_point_calculator = MultiSourceSequentialPointSelector(acquisition=acquisition,
                                                                         space=integral_bounds, n_levels=n_levels)
